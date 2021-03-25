@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="initial-scale=1.0, width=device-width"/>
+    <link rel="stylesheet" type="text/css"
+          href="https://js.api.here.com/v3/3.1/mapsjs-ui.css?dp-version=1578490236"/>
+    <script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-core.js"></script>
+    <script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-service.js"></script>
+    <script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-ui.js"></script>
+    <script type="text/javascript"
+            src="https://js.api.here.com/v3/3.1/mapsjs-mapevents.js"></script>
+
+</head>
+<body>
+<div id="test" style="width: 100%; height: auto; position: fixed; top: 10%;
+    left: 0; z-index: 99; text-align: center;">
+    <strong style="font-size: large;">Task-1: Get geocoded coordinate from input address</strong></br>
+    <br/><input type="text" id="auto-complete"
+                style="margin-left:5%; margin-right:5%; min-width:90%"
+                onkeyup="return autoCompleteListener(this, event);">
+</div>
+<div id="map" style="position:absolute; width:100%; height:100%; background:grey">
+</div>
+<div id="panel"
+     style="position:absolute; width:49%; left:51%; height:100%; background:inherit; display: none;"></div>
+
+<script type="text/javascript" charset="UTF-8">
+
+var AUTOCOMPLETION_URL = 'https://autocomplete.geocoder.ls.hereapi.com/6.2/suggest.json',
+    ajaxRequest = new XMLHttpRequest(),
+    query = '';
+
+function autoCompleteListener(textBox, event) {
+
+    if (query != textBox.value){
+        if (textBox.value.length >= 1){
+
+            var params = '?' +
+                'query=' +  encodeURIComponent(textBox.value) +
+                '&beginHighlight=' + encodeURIComponent('<mark>') +
+                '&endHighlight=' + encodeURIComponent('</mark>') +
+                '&maxresults=5' +  // The upper limit the for number of suggestions to be included
+                '&apikey=' + APIKEY;
+            ajaxRequest.open('GET', AUTOCOMPLETION_URL + params );
+            ajaxRequest.send();
+        }
+    }
+    query = textBox.value;
+}
+
+
+
+function onAutoCompleteSuccess() {
+    clearOldSuggestions();
+    addSuggestionsToPanel(this.response);  // In this context, 'this' means the XMLHttpRequest itself.
+    addSuggestionsToMap(this.response);
+}
+
+
+function onAutoCompleteFailed() {
+    alert('Ooops!');
+}
+
+// Attach the event listeners to the XMLHttpRequest object
+ajaxRequest.addEventListener("load", onAutoCompleteSuccess);
+ajaxRequest.addEventListener("error", onAutoCompleteFailed);
+ajaxRequest.responseType = "json";
+
+
+// set up containers for the map  + panel
+var mapContainer = document.getElementById('map'),
+    suggestionsContainer = document.getElementById('panel');
+
+//Step 1: initialize communication with the platform
+var APIKEY = 'wEaRjHxz2fWQOSKryZGfNPo0xfwOywM6VN1v6plgB10';
+
+var platform = new H.service.Platform({
+    apikey: APIKEY,
+    useCIT: false,
+    useHTTPS: true
+});
+var defaultLayers = platform.createDefaultLayers();
+var geocoder = platform.getGeocodingService();
+var group = new H.map.Group();
+
+group.addEventListener('tap', function (evt) {
+    map.setCenter(evt.target.getGeometry());
+    openBubble(
+        evt.target.getGeometry(), evt.target.getData());
+}, false);
+
+
+//Step 2: initialize a map - this map is centered over Europe
+var map = new H.Map(mapContainer,
+    defaultLayers.vector.normal.map,{
+        center: {lat:52.5160, lng:13.3779},
+        zoom: 3
+    });
+
+map.addObject(group);
+
+
+var behavior = new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
+
+// Create the default UI components
+var ui = H.ui.UI.createDefault(map, defaultLayers);
+
+// Hold a reference to any infobubble opened
+var bubble;
+
+
+function openBubble(position, text){
+    if(!bubble){
+        bubble =  new H.ui.InfoBubble(
+            position,
+            // The FO property holds the province name.
+            {content: '<small>' + text+ '</small>'+'<p>lat:'+position.lat+'</p>'+'<p>lng:'+position.lng+'</p>'});
+        ui.addBubble(bubble);
+    } else {
+        bubble.setPosition(position);
+        bubble.setContent('<small>' + text+ '</small>'+'<p>lat:'+position.lat+'</p>'+'<p>lng:'+position.lng+'</p>');
+        bubble.open();
+    }
+}
+
+
+
+function addSuggestionsToMap(response){
+    var onGeocodeSuccess = function (result) {
+            var marker,
+                locations = result.Response.View[0].Result,
+                i;
+
+            // Add a marker for each location found
+            for (i = 0; i < locations.length; i++) {
+                console.log(8888,locations[i].Location.DisplayPosition.Latitude,locations[i].Location.DisplayPosition.Longitude)
+                marker = new H.map.Marker({
+                    lat : locations[i].Location.DisplayPosition.Latitude,
+                    lng : locations[i].Location.DisplayPosition.Longitude
+                });
+                marker.setData(locations[i].Location.Address.Label);
+                group.addObject(marker);
+            }
+
+            map.getViewModel().setLookAtData({
+                bounds: group.getBoundingBox()
+            });
+            if(group.getObjects().length < 2){
+                map.setZoom(15);
+            }
+        },
+
+        onGeocodeError = function (error) {
+            alert('Ooops!');
+        },
+
+        geocodeByLocationId = function (locationId) {
+            geocodingParameters = {
+                locationId : locationId
+            };
+
+            geocoder.geocode(
+                geocodingParameters,
+                onGeocodeSuccess,
+                onGeocodeError
+            );
+        }
+
+
+
+    response.suggestions.forEach(function (item, index, array) {
+        geocodeByLocationId(item.locationId);
+    });
+}
+
+
+
+function clearOldSuggestions(){
+    group.removeAll ();
+    if(bubble){
+        bubble.close();
+    }
+}
+
+
+function addSuggestionsToPanel(response){
+    var suggestions = document.getElementById('suggestions');
+    suggestions.innerHTML = JSON.stringify(response, null, ' ');
+}
+
+
+
+var content = '';
+content  += '<br/><strong>Response:</strong><br/>';
+content  += '<div style="margin-left:5%; margin-right:5%;"><pre style="max-height:235px"><code  id="suggestions" style="font-size: small;">' +'{}' + '</code></pre></div>';
+
+
+suggestionsContainer.innerHTML = content;
+
+
+</script>
+</body>
+</html>
